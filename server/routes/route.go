@@ -24,6 +24,8 @@ func UserRoutes(incomingRoutes *gin.Engine) {
 func ChatRoutes(incomingRoutes *gin.Engine, ws *ws.Hub) {
 	incomingRoutes.POST("/create_room/:user_id", middleware.Authenticate(), conversation.AddUserToConversation())
 	incomingRoutes.GET("/conversation", middleware.Authenticate(), conversation.GetConversationByUserId())
+	incomingRoutes.POST("/create_room/:user_id", middleware.Authenticate(), conversation.AddUserToConversation())
+	incomingRoutes.GET("/conversation", middleware.Authenticate(), conversation.GetConversationByUserId())
 	incomingRoutes.GET("/join_room/:room_id", ws.HandleJoinRoom)
 	incomingRoutes.GET("/get_room_messages/:room_id", middleware.Authenticate(), conversation.GetRoomMessages())
 }
