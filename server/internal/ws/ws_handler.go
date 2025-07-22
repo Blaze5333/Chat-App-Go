@@ -1,11 +1,16 @@
 package ws
 
 import (
+	"chat-server/db"
+	"chat-server/models"
+	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type CreateRoomReq struct {
@@ -13,25 +18,8 @@ type CreateRoomReq struct {
 	Name string `json:"name"`
 }
 
-func (h *Hub) CreateRoom(c *gin.Context) {
-	var req CreateRoomReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid request"})
-		return
-	}
-	if _, exists := h.Rooms[req.ID]; exists {
-		c.JSON(400, gin.H{"error": "Room already exists"})
-		return
-	}
-	room := &Room{
-		ID:      req.ID,
-		Name:    req.Name,
-		Clients: make(map[string]*Client),
-	}
-	h.Rooms[req.ID] = room
-	c.JSON(201, room)
-}
-
+var ConversationCollection = db.ConversationData(db.Client, "conversations")
+var MessageCollection = db.MessageData(db.Client, "messages")
 var upgrader = websocket.Upgrader{
 
 	CheckOrigin: func(r *http.Request) bool {
@@ -39,15 +27,23 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func (h *Hub) HandleJoinRoom(c *gin.Context) {
-	fmt.Println("here i am")
+func getConversationByRoomId(roomId string) (*models.Conversation, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var conversation models.Conversation
+	err := ConversationCollection.FindOne(ctx, bson.M{"room_id": roomId}).Decode(&conversation)
+	if err != nil {
+		return nil, err
+	}
+	return &conversation, nil
+}
 
+func (h *Hub) HandleJoinRoom(c *gin.Context) {
 	roomId := c.Param("room_id")
 	userId := c.Query("user_id")
 	userName := c.Query("username")
-	_, exists := h.Rooms[roomId]
-
-	if !exists {
+	_, err := getConversationByRoomId(roomId)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Room not found"})
 		return
 	}
@@ -56,20 +52,26 @@ func (h *Hub) HandleJoinRoom(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upgrade connection"})
 		return
 	}
+	fmt.Print("User joined room:", userId, "Room ID:", roomId, "Username:", userName, "\n")
 	client := &Client{
 		ID:       userId,
 		Conn:     conn,
-		Message:  make(chan *Message),
+		Message:  make(chan *models.Message),
 		RoomId:   roomId,
 		Username: userName,
 	}
-	m := &Message{
-		Content:  "New user joined the room",
-		RoomId:   roomId,
-		Username: userName,
+	fmt.Println("reached 1")
+	_, exist := Rooms[roomId]
+	if !exist {
+		Rooms[roomId] = &Room{
+			ID:      roomId,
+			Clients: make(map[string]*Client),
+		}
+		fmt.Println("Client coming", client.ID, "in room", roomId)
+		Rooms[roomId].Clients[client.ID] = client
+	} else {
+		Rooms[roomId].Clients[client.ID] = client
 	}
-	h.Register <- client
-	h.Broadcast <- m
 	go client.WriteMessage()
 	client.ReadMessage(h)
 }
