@@ -20,11 +20,101 @@ type CreateRoomReq struct {
 
 var ConversationCollection = db.ConversationData(db.Client, "conversations")
 var MessageCollection = db.MessageData(db.Client, "messages")
+var UserCollection = db.UserData(db.Client, "users")
 var upgrader = websocket.Upgrader{
 
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow all origins for simplicity, adjust as needed
 	},
+}
+
+func EnterApp(c *gin.Context) {
+	userId := c.Query("user_id")
+	fmt.Println("User with ID:", userId, " is entering the app")
+	if userId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "User ID is required"})
+		return
+	}
+	var user models.User
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	fmt.Println("reached here 0")
+	err := UserCollection.FindOne(ctx, bson.M{"user_id": userId}).Decode(&user)
+	if err != nil {
+		fmt.Println("Error finding user:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to find user"})
+		return
+	}
+	fmt.Println("reached here 1")
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	OnlineUsers[userId] = conn
+
+	if err != nil {
+		fmt.Println("Error upgrading connection:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upgrade connection"})
+		return
+	}
+	cursor, err := ConversationCollection.Find(ctx, bson.M{
+		"participants.id": userId,
+	})
+	if err != nil {
+		fmt.Println("Error fetching conversations:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch conversations"})
+		return
+	}
+	defer cursor.Close(ctx)
+	var conversations []models.Conversation
+	if err := cursor.All(ctx, &conversations); err != nil {
+		fmt.Println("Error decoding conversations:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode conversations"})
+		return
+	}
+	type msg struct {
+		UserId string `json:"user_id"`
+		Online bool   `json:"online"`
+	}
+	for _, conversation := range conversations {
+		for _, participants := range conversation.Participants {
+			if participants.Id != userId {
+				exists := OnlineUsers[participants.Id]
+				if exists != nil {
+					OtherUserConn := OnlineUsers[participants.Id]
+					OtherUserConn.WriteJSON(&msg{
+						UserId: userId,
+						Online: true,
+					})
+					conn.WriteJSON(&msg{
+						UserId: participants.Id,
+						Online: true,
+					})
+				}
+			}
+		}
+	}
+
+	var exitMsg msg
+	conn.ReadJSON(&exitMsg)
+	var conversations1 []models.Conversation
+	if err := cursor.All(ctx, &conversations1); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode conversations"})
+		return
+	}
+	for _, conversation := range conversations {
+		for _, participants := range conversation.Participants {
+			if participants.Id != userId {
+				exists := OnlineUsers[participants.Id]
+				if exists != nil {
+					conn := OnlineUsers[participants.Id]
+					conn.WriteJSON(&msg{
+						UserId: userId,
+						Online: false,
+					})
+				}
+			}
+		}
+	}
+	delete(OnlineUsers, userId)
+
 }
 
 func getConversationByRoomId(roomId string) (*models.Conversation, error) {

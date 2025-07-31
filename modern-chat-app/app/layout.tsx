@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { NotificationProvider } from '@/contexts/NotificationContext'
 
 export const metadata: Metadata = {
   title: 'v0 App',
@@ -14,7 +15,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <NotificationProvider>
+          {children}
+        </NotificationProvider>
+      </body>
     </html>
   )
 }

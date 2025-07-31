@@ -3,6 +3,8 @@ package ws
 import (
 	"chat-server/models"
 	"fmt"
+
+	"github.com/gorilla/websocket"
 )
 
 type Hub struct {
@@ -12,6 +14,8 @@ type Hub struct {
 	Broadcast  chan *models.Message
 }
 
+var OnlineUsers = make(map[string]*websocket.Conn)
+
 func NewHub() *Hub {
 	return &Hub{
 		Rooms:      make(map[string]*Room),
@@ -19,6 +23,13 @@ func NewHub() *Hub {
 		Unregister: make(chan *Client),
 		Broadcast:  make(chan *models.Message),
 	}
+}
+
+type Notification struct {
+	UserId   string `json:"user_id"`
+	Content  string `json:"content"`
+	Username string `json:"username"`
+	Type     string `json:"type"` // "message" or "notification"
 }
 
 func (h *Hub) Run() {
@@ -51,6 +62,18 @@ func (h *Hub) Run() {
 				if room.ID == message.RoomId {
 					for _, client := range room.Clients {
 						client.Message <- message
+						if client.ID != message.UserId {
+							exists := OnlineUsers[client.ID]
+							if exists != nil {
+								conn := OnlineUsers[client.ID]
+								conn.WriteJSON(&Notification{
+									UserId:   message.UserId,
+									Content:  message.Content,
+									Username: message.Username,
+									Type:     "notification",
+								})
+							}
+						}
 					}
 				}
 

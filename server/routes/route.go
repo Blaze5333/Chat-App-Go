@@ -21,11 +21,10 @@ func UserRoutes(incomingRoutes *gin.Engine) {
 	incomingRoutes.POST("/upload_image", middleware.Authenticate(), user.UploadHandler)
 }
 
-func ChatRoutes(incomingRoutes *gin.Engine, ws *ws.Hub) {
+func ChatRoutes(incomingRoutes *gin.Engine, wss *ws.Hub) {
 	incomingRoutes.POST("/create_room/:user_id", middleware.Authenticate(), conversation.AddUserToConversation())
 	incomingRoutes.GET("/conversation", middleware.Authenticate(), conversation.GetConversationByUserId())
-	incomingRoutes.POST("/create_room/:user_id", middleware.Authenticate(), conversation.AddUserToConversation())
-	incomingRoutes.GET("/conversation", middleware.Authenticate(), conversation.GetConversationByUserId())
-	incomingRoutes.GET("/join_room/:room_id", ws.HandleJoinRoom)
+	incomingRoutes.GET("/join_room/:room_id", wss.HandleJoinRoom)
 	incomingRoutes.GET("/get_room_messages/:room_id", middleware.Authenticate(), conversation.GetRoomMessages())
+	incomingRoutes.GET("/ws/join_app", ws.EnterApp)
 }

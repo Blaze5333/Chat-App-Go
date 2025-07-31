@@ -29,6 +29,7 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(true)
   
   const wsRef = useRef<WebSocket | null>(null)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const currentUser = useRef<any>(null)
 
@@ -117,16 +118,17 @@ export default function ChatPage() {
     }
   }
 
+
   const connectWebSocket = () => {
     const userId = currentUser.current?.id
     const username = currentUser.current?.username || ""
     const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080'}/join_room/${roomId}?user_id=${userId}&username=${username}`
-    
+   
     console.log('Connecting to WebSocket:', wsUrl)
     
     try {
       wsRef.current = new WebSocket(wsUrl)
-      
+    
       wsRef.current.onopen = () => {
         console.log('WebSocket connected successfully')
         setIsConnected(true)

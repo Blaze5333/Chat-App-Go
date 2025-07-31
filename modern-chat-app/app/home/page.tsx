@@ -1,14 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Plus, Search, MessageCircle, MoreVertical, LogOut, Settings, User } from "lucide-react"
+import { Plus, Search, MessageCircle, LogOut, Settings, User } from "lucide-react"
 import { apiClient } from "@/lib/api"
 import AddUserModal from "@/components/AddUserModal"
+import { useNotification } from "@/contexts/NotificationContext"
 
 interface Chat {
   id: string
@@ -19,6 +20,8 @@ interface Chat {
   unreadCount: number
   avatar?: string
   roomId: string
+  userId?: string
+  isOnline?: boolean
 }
 
 export default function HomePage() {
@@ -27,6 +30,8 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([])
+  const { onlineRef, setupNotificationSocket, closeNotificationSocket } = useNotification()
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -40,6 +45,9 @@ export default function HomePage() {
     try {
       const user = JSON.parse(userStr)
       setCurrentUser(user)
+      
+      // Setup notification socket using context (this will persist across navigation)
+      setupNotificationSocket(user.id)
     } catch (error) {
       console.error('Error parsing user data:', error)
       window.location.href = '/login'
@@ -47,6 +55,49 @@ export default function HomePage() {
     }
     
     fetchChats()
+    
+    // Listen for online status updates from notification context
+    const handleOnlineUpdate = (event: CustomEvent) => {
+      const data = event.detail
+      
+      if (data.online === true) {
+        setChats((prevChats) => {
+          return prevChats.map((chat) => {
+            if (chat.userId === data.user_id) {
+              return { ...chat, isOnline: true }
+            }
+            return chat
+          })
+        })
+        
+        setOnlineUsers((prevUsers) => {
+          if (!prevUsers.includes(data.username)) {
+            return [...prevUsers, data.username]
+          }
+          return prevUsers
+        })
+      } else if (data.online === false) {
+        setChats((prevChats) => {
+          return prevChats.map((chat) => {
+            if (chat.userId === data.user_id) {
+              return { ...chat, isOnline: false }
+            }
+            return chat
+          })
+        })
+        
+        setOnlineUsers((prevUsers) => {
+          return prevUsers.filter((user) => user !== data.username)
+        })
+      }
+    }
+    
+    window.addEventListener('onlineStatusUpdate', handleOnlineUpdate as EventListener)
+    
+    return () => {
+      window.removeEventListener('onlineStatusUpdate', handleOnlineUpdate as EventListener)
+      // DON'T close the notification socket here - let it persist across navigation
+    }
   }, [])
 
   const fetchChats = async () => {
@@ -62,10 +113,9 @@ export default function HomePage() {
 
       const currentUser = JSON.parse(userStr)
       
-      // Fetch conversations from your backend
+     
       const response = await apiClient.getConversations()
       
-      // Check if response.data exists and is an array
       if (!response.data || !Array.isArray(response.data)) {
         console.log('No conversations data received:', response)
         setChats([])
@@ -80,14 +130,17 @@ export default function HomePage() {
         // Use participant data from the conversation
         const participantName = otherParticipant?.username || 'Unknown User'
         const participantEmail = otherParticipant?.email || ''
+        console.log('Participant:', participantName, otherParticipant?.id)
         
         return {
           id: conv._id,
           roomId: conv._id,
+          userId: otherParticipant?.id || '',
           name: participantName,
           email: participantEmail,
           avatar: otherParticipant?.image,
           lastMessage: conv.last_message?.content || 'No messages yet',
+          isOnline:false,
           timestamp: conv.last_message 
             ? new Date(conv.last_message.created_at).toLocaleTimeString([], { 
                 hour: '2-digit', 
@@ -102,6 +155,9 @@ export default function HomePage() {
       })
       
       setChats(transformedChats)
+      
+      // Update localStorage with latest chats for notification navigation
+      localStorage.setItem('chats', JSON.stringify(transformedChats))
     } catch (error) {
       console.error("Failed to fetch chats:", error)
       
@@ -146,6 +202,9 @@ export default function HomePage() {
   )
 
   const handleLogout = () => {
+    // Close the notification socket before logout
+    closeNotificationSocket()
+    
     // Clear authentication data
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -171,7 +230,7 @@ export default function HomePage() {
   }
 
   const handleChatClick = (chat: Chat) => {
-    // Store room info for the chat page
+    // Store room info for the chat page)
     sessionStorage.setItem(`room_${chat.roomId}`, JSON.stringify({
       name: chat.name,
       email: chat.email
@@ -197,15 +256,18 @@ export default function HomePage() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="p-1">
-                    <Avatar className="w-8 h-8">
-                      <AvatarImage 
-                        src={currentUser.image || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"} 
-                        alt={currentUser.username}
-                      />
-                      <AvatarFallback className="text-xs bg-blue-100 text-blue-600">
-                        <User className="w-4 h-4" />
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="relative">
+                      <Avatar className="w-8 h-8">
+                        <AvatarImage 
+                          src={currentUser.image || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"} 
+                          alt={currentUser.username}
+                        />
+                        <AvatarFallback className="text-xs bg-blue-100 text-blue-600">
+                          <User className="w-4 h-4" />
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                    </div>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
@@ -254,19 +316,37 @@ export default function HomePage() {
                 onClick={() => handleChatClick(chat)}
               >
                 <div className="flex items-center space-x-3">
-                  <Avatar className="w-12 h-12">
-                    <AvatarImage 
-                      src={chat.avatar || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"} 
-                      alt={chat.name}
-                    />
-                    <AvatarFallback className="bg-blue-100 text-blue-600 font-medium text-sm">
-                      {getInitials(chat.name)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="relative">
+                    <Avatar className="w-12 h-12">
+                      <AvatarImage 
+                        src={chat.avatar || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"} 
+                        alt={chat.name}
+                      />
+                      <AvatarFallback className="bg-blue-100 text-blue-600 font-medium text-sm">
+                        {getInitials(chat.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    {chat.isOnline ? (
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+                    ) : (
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-gray-400 border-2 border-white rounded-full"></div>
+                    )}
+                  </div>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
-                      <h3 className="font-medium text-gray-900 truncate">{chat.name}</h3>
+                      <div className="flex items-center space-x-2">
+                        <h3 className="font-medium text-gray-900 truncate">{chat.name}</h3>
+                        {chat.isOnline ? (
+                          <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded-full">
+                            Online
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-500 font-medium bg-gray-50 px-2 py-0.5 rounded-full">
+                            Offline
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xs text-gray-500">{chat.timestamp}</span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -300,6 +380,7 @@ export default function HomePage() {
         onOpenChange={setIsAddUserModalOpen}
         onUserAdded={handleUserAdded}
         existingChats={chats}
+        onlineUsers={onlineUsers}
       />
     </div>
   )

@@ -15,6 +15,7 @@ interface AddUserModalProps {
   onOpenChange: (open: boolean) => void
   onUserAdded: () => void
   existingChats: Array<{ email: string }>
+  onlineUsers?: string[]
 }
 
 interface SearchedUser {
@@ -22,9 +23,10 @@ interface SearchedUser {
   username: string
   email: string
   image?: string
+  isOnline?: boolean
 }
 
-export default function AddUserModal({ open, onOpenChange, onUserAdded, existingChats }: AddUserModalProps) {
+export default function AddUserModal({ open, onOpenChange, onUserAdded, existingChats, onlineUsers = [] }: AddUserModalProps) {
   const [searchEmail, setSearchEmail] = useState("")
   const [searchedUser, setSearchedUser] = useState<SearchedUser | null>(null)
   const [isSearching, setIsSearching] = useState(false)
@@ -44,7 +46,11 @@ export default function AddUserModal({ open, onOpenChange, onUserAdded, existing
 
     try {
       const user = await apiClient.searchUser(searchEmail.trim())
-      setSearchedUser(user)
+      const userWithStatus = {
+        ...user,
+        isOnline: onlineUsers.includes(user.username)
+      }
+      setSearchedUser(userWithStatus)
     } catch (error) {
       setError(error instanceof Error ? error.message : "User not found")
       setSearchedUser(null)
@@ -160,17 +166,35 @@ export default function AddUserModal({ open, onOpenChange, onUserAdded, existing
           {searchedUser && (
             <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
               <div className="flex items-center space-x-3 mb-3">
-                <Avatar className="w-12 h-12">
-                  <AvatarImage 
-                    src={searchedUser.image || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"} 
-                    alt={searchedUser.username}
-                  />
-                  <AvatarFallback className="bg-blue-100 text-blue-600 font-medium">
-                    <User className="w-5 h-5" />
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="w-12 h-12">
+                    <AvatarImage 
+                      src={searchedUser.image || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"} 
+                      alt={searchedUser.username}
+                    />
+                    <AvatarFallback className="bg-blue-100 text-blue-600 font-medium">
+                      <User className="w-5 h-5" />
+                    </AvatarFallback>
+                  </Avatar>
+                  {searchedUser.isOnline ? (
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                  ) : (
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-gray-400 border-2 border-white rounded-full"></div>
+                  )}
+                </div>
                 <div className="flex-1">
-                  <h3 className="font-medium text-gray-900">{searchedUser.username}</h3>
+                  <div className="flex items-center space-x-2 mb-1">
+                    <h3 className="font-medium text-gray-900">{searchedUser.username}</h3>
+                    {searchedUser.isOnline ? (
+                      <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded-full">
+                        Online
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-500 font-medium bg-gray-50 px-2 py-0.5 rounded-full">
+                        Offline
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-gray-600">{searchedUser.email}</p>
                 </div>
               </div>

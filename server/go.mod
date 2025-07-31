@@ -7,7 +7,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.29.18
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.85
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.84.1
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.10.1
 	github.com/gorilla/sessions v1.1.1
@@ -17,6 +16,8 @@ require (
 	go.mongodb.org/mongo-driver v1.17.4
 	golang.org/x/crypto v0.39.0
 )
+
+require github.com/dgrijalva/jwt-go v3.2.0+incompatible
 
 require (
 	cloud.google.com/go/compute v1.20.1 // indirect
